@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+   
+  ClusterName:
+    Type: String
+    Default: new-cluster 
+  ServiceName:
+    Type: String
+    Default: newService
+  ImageUrl:
+    Type: String
+    Default: '596872254694.dkr.ecr.us-west-2.amazonaws.com/apache' 
+  ContainerName:
+    Type: String
+    Default: 'apache'
+  ContainerPort:
+    Type: Number
+    Default: 80
+  ContainerCpu:
+    Type: Number
+    Default: 256
+  ContainerMemory:
+    Type: Number
+    Default: 512
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+  Path:
+    Type: String
+    Default: "*"
+  Role:
+    Type: String
+    Default: ecsTaskExecutionRole
+  TargetGroupName:
+    Type: String
+    Default: 'new-target2'
+  TargetHealthCheckPath:
+    Type: String
+    Default: '/'
+Conditions:
+  HasCustomRole: !Not 
+    - !Equals 
+      - Ref: Role
+      - ''
+Resources:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['-', [ECSLogGroup, !Ref ServiceName]]
+      RetentionInDays: 14
+  TaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: !Ref ServiceName
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: arn:aws:iam::596872254694:role/ecsTaskExecutionRole
+      TaskRoleArn: arn:aws:iam::596872254694:role/ecsTaskExecutionRole
+     
+      ContainerDefinitions:
+        - Name: !Ref ContainerName
+          Image: !Ref ImageUrl
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+  Service:
+    Type: 'AWS::ECS::Service'
+    DependsOn: LoadBalancerRule
+    Properties:
+      ServiceName: !Ref ServiceName
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: !Ref DesiredCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: 'ENABLED'
+          SecurityGroups: 
+            - 'sg-0176ee02482e53dc7'
+          Subnets:
+            - 'subnet-5ee8c607'
+            - 'subnet-658f7101'
+      TaskDefinition: !Ref TaskDefinition
+      LoadBalancers:
+        - ContainerName: !Ref ContainerName
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+      
+  TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 300
+      HealthCheckPath: !Ref TargetHealthCheckPath
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 20
+      HealthyThresholdCount: 2
+      TargetType: ip
+      Name: !Ref TargetGroupName
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      VpcId: 'vpc-1743b673'
+  LoadBalancerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref 'TargetGroup'
+          Type: 'forward'
+      Conditions:
+        - Field: path-pattern
+          Values: 
+            - !Ref 'Path'
+      ListenerArn: 'arn:aws:elasticloadbalancing:us-west-2:596872254694:listener/app/new-alb/2387b91c98a49a0d/06f5f6438825f5cc'
